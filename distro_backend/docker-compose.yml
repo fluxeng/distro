@@ -1,0 +1,70 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgis/postgis:14-3.4
+    environment:
+      - POSTGRES_DB=distro
+      - POSTGRES_USER=distro
+      - POSTGRES_PASSWORD=123456789
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U distro"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./distro_backend
+      dockerfile: Dockerfile
+    command: gunicorn --workers 3 --bind 0.0.0.0:8000 config.wsgi:application
+    volumes:
+      - ./distro_backend:/app
+      - staticfiles_data:/app/staticfiles  # Updated volume name
+      - media_data:/app/media
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=postgresql://distro:123456789@db:5432/distro
+      - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY}
+      - DEBUG=False
+    expose:
+      - "8000"
+
+  migration:
+    build:
+      context: ./distro_backend
+      dockerfile: Dockerfile
+    command: python manage.py migrate_schemas
+    volumes:
+      - ./distro_backend:/app
+      - staticfiles_data:/app/staticfiles  # Updated volume name
+      - media_data:/app/media
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=postgresql://distro:123456789@db:5432/distro
+      - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY}
+      - DEBUG=False
+
+  nginx:
+    image: nginx:latest
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - staticfiles_data:/app/staticfiles  # Updated volume name
+      - media_data:/app/media
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
+  staticfiles_data:  # Updated volume name
+  media_data:
