@@ -1,22 +1,42 @@
-"""
-URL configuration for distro_backend project.
-
-The `urlpatterns` list routes URLs to views. For more information please see:
-    https://docs.djangoproject.com/en/5.2/topics/http/urls/
-Examples:
-Function views
-    1. Add an import:  from my_app import views
-    2. Add a URL to urlpatterns:  path('', views.home, name='home')
-Class-based views
-    1. Add an import:  from other_app.views import Home
-    2. Add a URL to urlpatterns:  path('', Home.as_view(), name='home')
-Including another URLconf
-    1. Import the include() function: from django.urls import include, path
-    2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
-"""
+# distro_backend/urls.py (Main tenant URLs)
 from django.contrib import admin
-from django.urls import path
+from django.urls import path, include
+from django.conf import settings
+from django.conf.urls.static import static
 
 urlpatterns = [
     path('admin/', admin.site.urls),
+    path('api/auth/', include('rest_framework.urls')),
+    path('api/utilities/', include('utilities.urls')),
+    path('api/infrastructure/', include('infrastructure.urls')),
+    path('api/maintenance/', include('maintenance.urls')),
+    path('api/customer-support/', include('customer_support.urls')),
+]
+
+if settings.DEBUG:
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+    urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
+
+
+# distro_backend/urls_public.py (Public schema URLs)
+from django.contrib import admin
+from django.urls import path, include
+from django.http import JsonResponse
+
+def health_check(request):
+    """Simple health check endpoint"""
+    return JsonResponse({'status': 'healthy', 'version': '1.0'})
+
+def tenant_info(request):
+    """Public endpoint to show available tenants"""
+    return JsonResponse({
+        'message': 'Distro V1 - Water Utility Management Platform',
+        'version': '1.0',
+        'documentation': '/api/docs/'
+    })
+
+urlpatterns = [
+    path('admin/', admin.site.urls),
+    path('health/', health_check, name='health_check'),
+    path('', tenant_info, name='tenant_info'),
 ]
