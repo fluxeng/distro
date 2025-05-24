@@ -1,7 +1,6 @@
 from rest_framework import serializers
 from .models import Issue, MaintenanceTask, WorkOrder
 from infrastructure.serializers import AssetSerializer
-from utilities.serializers import UserSerializer
 
 class IssueSerializer(serializers.ModelSerializer):
     asset_details = AssetSerializer(source='affected_asset', read_only=True)

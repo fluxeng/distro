@@ -1,8 +1,11 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from .views import UserLocationLoggerView, DashboardStatsView
+from .views import UserViewSet, DashboardStatsView
+
+router = DefaultRouter()
+router.register(r'users', UserViewSet)
 
 urlpatterns = [
-    path('gps/', UserLocationLoggerView.as_view(), name="gps-log"),
-    path('dashboard/', DashboardStatsView.as_view(), name="dashboard-stats"),
+    path('', include(router.urls)),
+    path('dashboard/', DashboardStatsView.as_view(), name='dashboard-stats'),
 ]

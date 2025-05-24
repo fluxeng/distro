@@ -1,4 +1,3 @@
-# infrastructure/serializers.py
 from rest_framework import serializers
 from rest_framework_gis.serializers import GeoFeatureModelSerializer
 from .models import (
@@ -6,12 +5,10 @@ from .models import (
     AssetDocument, AssetPhoto
 )
 
-
 class AssetTypeSerializer(serializers.ModelSerializer):
     class Meta:
         model = AssetType
         fields = '__all__'
-
 
 class AssetDocumentSerializer(serializers.ModelSerializer):
     uploaded_by_name = serializers.CharField(source='uploaded_by.get_full_name', read_only=True)
@@ -24,7 +21,6 @@ class AssetDocumentSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['uploaded_at']
 
-
 class AssetPhotoSerializer(serializers.ModelSerializer):
     taken_by_name = serializers.CharField(source='taken_by.get_full_name', read_only=True)
     
@@ -35,7 +31,6 @@ class AssetPhotoSerializer(serializers.ModelSerializer):
             'taken_by_name', 'taken_at'
         ]
         read_only_fields = ['taken_at']
-
 
 class AssetSerializer(GeoFeatureModelSerializer):
     asset_type_name = serializers.CharField(source='asset_type.name', read_only=True)
@@ -58,7 +53,6 @@ class AssetSerializer(GeoFeatureModelSerializer):
         ]
         read_only_fields = ['created_at', 'updated_at']
 
-
 class PipeSerializer(GeoFeatureModelSerializer):
     length_km = serializers.SerializerMethodField()
     
@@ -76,7 +70,6 @@ class PipeSerializer(GeoFeatureModelSerializer):
     def get_length_km(self, obj):
         return round(obj.length / 1000, 2)
 
-
 class ValveSerializer(serializers.ModelSerializer):
     asset_details = AssetSerializer(source='asset', read_only=True)
     operated_by_name = serializers.CharField(source='operated_by.get_full_name', read_only=True)
@@ -90,7 +83,6 @@ class ValveSerializer(serializers.ModelSerializer):
             'control_id'
         ]
 
-
 class MeterSerializer(serializers.ModelSerializer):
     asset_details = AssetSerializer(source='asset', read_only=True)
     
@@ -102,7 +94,6 @@ class MeterSerializer(serializers.ModelSerializer):
             'last_reading_date', 'total_consumption',
             'is_smart_meter', 'communication_id'
         ]
-
 
 class ZoneSerializer(GeoFeatureModelSerializer):
     inlet_meters_count = serializers.IntegerField(source='inlet_meters.count', read_only=True)
@@ -117,7 +108,6 @@ class ZoneSerializer(GeoFeatureModelSerializer):
         ]
         read_only_fields = ['created_at', 'updated_at']
 
-
 class AssetMapSerializer(GeoFeatureModelSerializer):
     """Simplified serializer for map display"""
     type_name = serializers.CharField(source='asset_type.name', read_only=True)
@@ -131,52 +121,3 @@ class AssetMapSerializer(GeoFeatureModelSerializer):
             'id', 'asset_id', 'name', 'type_name', 'type_icon',
             'type_color', 'status', 'location'
         ]
-    
-    
-    @property
-    def is_admin(self):
-        return self.role == 'admin'
-    
-    @property
-    def is_supervisor(self):
-        return self.role in ['admin', 'supervisor']
-    
-    @property
-    def can_manage_issues(self):
-        return self.role in ['admin', 'supervisor', 'technician']
-
-
-class Department(models.Model):
-    """Departments within the utility"""
-    name = models.CharField(max_length=100)
-    description = models.TextField(blank=True)
-    manager = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='managed_departments')
-    
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-    
-    class Meta:
-        db_table = 'departments'
-    
-    def __str__(self):
-        return self.name
-
-
-class Team(models.Model):
-    """Teams for organizing field agents"""
-    name = models.CharField(max_length=100)
-    department = models.ForeignKey(Department, on_delete=models.CASCADE, related_name='teams')
-    supervisor = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='supervised_teams')
-    members = models.ManyToManyField(User, related_name='teams')
-    
-    # Coverage area
-    coverage_area = gis_models.PolygonField(null=True, blank=True)
-    
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-    
-    class Meta:
-        db_table = 'teams'
-    
-    def __str__(self):
-        return f"{self.name} - {self.department.name}"

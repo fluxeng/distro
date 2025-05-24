@@ -1,4 +1,3 @@
-# distro_backend/celery.py
 import os
 from celery import Celery
 
@@ -28,7 +27,7 @@ app.conf.update(
     worker_max_tasks_per_child=1000,
 )
 
-# Periodic tasks (you can add these later)
+# Periodic tasks
 app.conf.beat_schedule = {
     'send-daily-reports': {
         'task': 'utilities.tasks.send_daily_reports',
@@ -39,11 +38,3 @@ app.conf.beat_schedule = {
         'schedule': 3600.0,  # Every hour
     },
 }
-
-
-# distro_backend/__init__.py
-# This will make sure the app is always imported when
-# Django starts so that shared_task will use this app.
-from .celery import app as celery_app
-
-__all__ = ('celery_app',)
