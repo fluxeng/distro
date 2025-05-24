@@ -1,356 +1,271 @@
-from django.http import JsonResponse
-from django.views.decorators.csrf import csrf_exempt
-from django.views.decorators.http import require_http_methods
+from rest_framework import viewsets, status
+from rest_framework.decorators import action
+from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
+from django.shortcuts import get_object_or_404
 from django.core.exceptions import ValidationError
-import json
 import logging
+
+from .models import Utility
+from .serializers import (
+    TenantSerializer, TenantCreateSerializer, TenantDetailSerializer,
+    TenantDeleteSerializer, TenantToggleSerializer, DomainCreateSerializer
+)
 from .utils import (
-    create_tenant, soft_delete_tenant, restore_tenant, permanently_delete_tenant,
-    add_domain_to_tenant, toggle_tenant_status, list_tenants, get_tenant_info
+    soft_delete_tenant, restore_tenant, permanently_delete_tenant,
+    toggle_tenant_status, list_tenants, get_tenant_info
 )
 
 logger = logging.getLogger('tenants')
 
 
-@csrf_exempt
-@require_http_methods(["POST"])
-def create_tenant_api(request):
+class TenantViewSet(viewsets.ModelViewSet):
     """
-    API endpoint to create a new tenant
+    ViewSet for managing tenants with full CRUD operations
+    """
+    queryset = Utility.objects.all()
+    # permission_classes = [IsAuthenticated]  # Uncomment when you add auth
     
-    POST /api/tenants/create/
-    {
-        "name": "Nairobi Water Company",
-        "domain": "nairobi.distro.app"
-    }
-    """
-    try:
-        data = json.loads(request.body)
-        name = data.get('name')
-        domain_name = data.get('domain')
+    def get_serializer_class(self):
+        """Return different serializers for different actions"""
+        if self.action == 'create':
+            return TenantCreateSerializer
+        elif self.action == 'retrieve':
+            return TenantDetailSerializer
+        elif self.action in ['soft_delete', 'permanent_delete']:
+            return TenantDeleteSerializer
+        elif self.action == 'toggle_status':
+            return TenantToggleSerializer
+        return TenantSerializer
+    
+    def get_queryset(self):
+        """Filter queryset based on query parameters"""
+        queryset = Utility.objects.all()
         
-        if not name or not domain_name:
-            return JsonResponse({
+        # Handle query parameters
+        active_only = self.request.query_params.get('active_only', 'false').lower() == 'true'
+        include_deleted = self.request.query_params.get('include_deleted', 'false').lower() == 'true'
+        
+        if active_only:
+            queryset = queryset.filter(is_active=True)
+        
+        if not include_deleted:
+            queryset = queryset.filter(is_deleted=False)
+            
+        return queryset
+    
+    def create(self, request, *args, **kwargs):
+        """Create a new tenant"""
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        try:
+            tenant = serializer.save()
+            response_serializer = TenantSerializer(tenant)
+            return Response({
+                'success': True,
+                'data': response_serializer.data
+            }, status=status.HTTP_201_CREATED)
+        except ValidationError as e:
+            logger.error(f"Validation error in create tenant: {str(e)}")
+            return Response({
                 'success': False,
-                'error': 'Both name and domain are required'
-            }, status=400)
-        
-        utility, domain = create_tenant(name, domain_name)
-        
-        return JsonResponse({
-            'success': True,
-            'data': {
-                'utility_id': utility.id,
-                'name': utility.name,
-                'schema_name': utility.schema_name,
-                'domain': domain.domain,
-                'is_primary': domain.is_primary
-            }
-        })
-        
-    except ValidationError as e:
-        logger.error(f"Validation error in create_tenant_api: {str(e)}")
-        return JsonResponse({
-            'success': False,
-            'error': str(e)
-        }, status=400)
-    except json.JSONDecodeError:
-        return JsonResponse({
-            'success': False,
-            'error': 'Invalid JSON data'
-        }, status=400)
-    except Exception as e:
-        logger.error(f"Unexpected error in create_tenant_api: {str(e)}")
-        return JsonResponse({
-            'success': False,
-            'error': 'Internal server error'
-        }, status=500)
-
-
-@csrf_exempt
-@require_http_methods(["DELETE"])
-def soft_delete_tenant_api(request, utility_id):
-    """
-    API endpoint to soft delete a tenant
-    
-    DELETE /api/tenants/{utility_id}/delete/
-    {
-        "confirm_name": "Nairobi Water Company"
-    }
-    """
-    try:
-        data = json.loads(request.body) if request.body else {}
-        confirm_name = data.get('confirm_name')
-        
-        utility = soft_delete_tenant(utility_id, confirm_name)
-        
-        return JsonResponse({
-            'success': True,
-            'message': 'Tenant soft deleted successfully',
-            'data': {
-                'utility_id': utility.id,
-                'name': utility.name,
-                'is_deleted': utility.is_deleted,
-                'deleted_on': utility.deleted_on.isoformat() if utility.deleted_on else None
-            }
-        })
-        
-    except ValidationError as e:
-        logger.error(f"Validation error in soft_delete_tenant_api: {str(e)}")
-        return JsonResponse({
-            'success': False,
-            'error': str(e)
-        }, status=400)
-    except Exception as e:
-        logger.error(f"Unexpected error in soft_delete_tenant_api: {str(e)}")
-        return JsonResponse({
-            'success': False,
-            'error': 'Internal server error'
-        }, status=500)
-
-
-@csrf_exempt
-@require_http_methods(["POST"])
-def restore_tenant_api(request, utility_id):
-    """
-    API endpoint to restore a soft-deleted tenant
-    
-    POST /api/tenants/{utility_id}/restore/
-    """
-    try:
-        utility = restore_tenant(utility_id)
-        
-        return JsonResponse({
-            'success': True,
-            'message': 'Tenant restored successfully',
-            'data': {
-                'utility_id': utility.id,
-                'name': utility.name,
-                'is_active': utility.is_active,
-                'is_deleted': utility.is_deleted
-            }
-        })
-        
-    except ValidationError as e:
-        logger.error(f"Validation error in restore_tenant_api: {str(e)}")
-        return JsonResponse({
-            'success': False,
-            'error': str(e)
-        }, status=400)
-    except Exception as e:
-        logger.error(f"Unexpected error in restore_tenant_api: {str(e)}")
-        return JsonResponse({
-            'success': False,
-            'error': 'Internal server error'
-        }, status=500)
-
-
-@csrf_exempt
-@require_http_methods(["DELETE"])
-def permanently_delete_tenant_api(request, utility_id):
-    """
-    API endpoint to permanently delete a tenant (only works on soft-deleted tenants)
-    
-    DELETE /api/tenants/{utility_id}/permanent-delete/
-    {
-        "confirm_name": "Nairobi Water Company"
-    }
-    """
-    try:
-        data = json.loads(request.body) if request.body else {}
-        confirm_name = data.get('confirm_name')
-        
-        success = permanently_delete_tenant(utility_id, confirm_name)
-        
-        return JsonResponse({
-            'success': success,
-            'message': 'Tenant permanently deleted successfully'
-        })
-        
-    except ValidationError as e:
-        logger.error(f"Validation error in permanently_delete_tenant_api: {str(e)}")
-        return JsonResponse({
-            'success': False,
-            'error': str(e)
-        }, status=400)
-    except Exception as e:
-        logger.error(f"Unexpected error in permanently_delete_tenant_api: {str(e)}")
-        return JsonResponse({
-            'success': False,
-            'error': 'Internal server error'
-        }, status=500)
-
-
-@csrf_exempt
-@require_http_methods(["DELETE"])
-def delete_tenant_api(request, utility_id):
-    """
-    API endpoint to soft delete a tenant (backward compatibility)
-    
-    DELETE /api/tenants/{utility_id}/delete/
-    {
-        "confirm_name": "Nairobi Water Company"
-    }
-    """
-    return soft_delete_tenant_api(request, utility_id)
-
-
-@csrf_exempt
-@require_http_methods(["POST"])
-def add_domain_api(request, utility_id):
-    """
-    API endpoint to add a domain to existing tenant
-    
-    POST /api/tenants/{utility_id}/domains/
-    {
-        "domain": "new-domain.com",
-        "is_primary": false
-    }
-    """
-    try:
-        data = json.loads(request.body)
-        domain_name = data.get('domain')
-        is_primary = data.get('is_primary', False)
-        
-        if not domain_name:
-            return JsonResponse({
+                'error': str(e)
+            }, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            logger.error(f"Unexpected error in create tenant: {str(e)}")
+            return Response({
                 'success': False,
-                'error': 'Domain name is required'
-            }, status=400)
-        
-        domain = add_domain_to_tenant(utility_id, domain_name, is_primary)
-        
-        return JsonResponse({
-            'success': True,
-            'data': {
-                'domain': domain.domain,
-                'is_primary': domain.is_primary,
-                'is_active': domain.is_active
-            }
-        })
-        
-    except ValidationError as e:
-        return JsonResponse({
-            'success': False,
-            'error': str(e)
-        }, status=400)
-    except Exception as e:
-        logger.error(f"Unexpected error in add_domain_api: {str(e)}")
-        return JsonResponse({
-            'success': False,
-            'error': 'Internal server error'
-        }, status=500)
-
-
-@csrf_exempt
-@require_http_methods(["PATCH"])
-def toggle_tenant_status_api(request, utility_id):
-    """
-    API endpoint to toggle tenant active status
+                'error': 'Internal server error'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
-    PATCH /api/tenants/{utility_id}/toggle/
-    {
-        "is_active": true  // optional, will toggle if not provided
-    }
-    """
-    try:
-        data = json.loads(request.body) if request.body else {}
-        is_active = data.get('is_active')
-        
-        utility = toggle_tenant_status(utility_id, is_active)
-        
-        return JsonResponse({
-            'success': True,
-            'data': {
-                'utility_id': utility.id,
-                'name': utility.name,
-                'is_active': utility.is_active
-            }
-        })
-        
-    except ValidationError as e:
-        return JsonResponse({
-            'success': False,
-            'error': str(e)
-        }, status=400)
-    except Exception as e:
-        logger.error(f"Unexpected error in toggle_tenant_status_api: {str(e)}")
-        return JsonResponse({
-            'success': False,
-            'error': 'Internal server error'
-        }, status=500)
-
-
-@require_http_methods(["GET"])
-def list_tenants_api(request):
-    """
-    API endpoint to list all tenants
+    def list(self, request, *args, **kwargs):
+        """List all tenants with filtering options"""
+        try:
+            queryset = self.get_queryset()
+            serializer = self.get_serializer(queryset, many=True)
+            
+            return Response({
+                'success': True,
+                'data': serializer.data,
+                'count': len(serializer.data)
+            })
+        except Exception as e:
+            logger.error(f"Unexpected error in list tenants: {str(e)}")
+            return Response({
+                'success': False,
+                'error': 'Internal server error'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
-    GET /api/tenants/?active_only=true&include_deleted=false
-    """
-    try:
-        active_only = request.GET.get('active_only', 'false').lower() == 'true'
-        include_deleted = request.GET.get('include_deleted', 'false').lower() == 'true'
-        tenants = list_tenants(active_only, include_deleted)
-        
-        data = []
-        for tenant in tenants:
-            tenant_data = {
-                'id': tenant.id,
-                'name': tenant.name,
-                'schema_name': tenant.schema_name,
-                'is_active': tenant.is_active,
-                'is_deleted': tenant.is_deleted,
-                'deleted_on': tenant.deleted_on.isoformat() if tenant.deleted_on else None,
-                'created_on': tenant.created_on.isoformat(),
-                'domains': [
-                    {
-                        'domain': domain.domain,
-                        'is_primary': domain.is_primary,
-                        'is_active': domain.is_active
-                    }
-                    for domain in tenant.domains.all()
-                ]
-            }
-            data.append(tenant_data)
-        
-        return JsonResponse({
-            'success': True,
-            'data': data,
-            'count': len(data)
-        })
-        
-    except Exception as e:
-        logger.error(f"Unexpected error in list_tenants_api: {str(e)}")
-        return JsonResponse({
-            'success': False,
-            'error': 'Internal server error'
-        }, status=500)
-
-
-@require_http_methods(["GET"])
-def get_tenant_info_api(request, utility_id):
-    """
-    API endpoint to get detailed tenant information
+    def retrieve(self, request, *args, **kwargs):
+        """Get detailed tenant information"""
+        try:
+            tenant = self.get_object()
+            info = get_tenant_info(tenant.id)
+            
+            return Response({
+                'success': True,
+                'data': info
+            })
+        except ValidationError as e:
+            return Response({
+                'success': False,
+                'error': str(e)
+            }, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            logger.error(f"Unexpected error in get tenant info: {str(e)}")
+            return Response({
+                'success': False,
+                'error': 'Internal server error'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
-    GET /api/tenants/{utility_id}/
-    """
-    try:
-        info = get_tenant_info(utility_id)
+    @action(detail=True, methods=['delete'], url_path='soft-delete')
+    def soft_delete(self, request, pk=None):
+        """Soft delete a tenant"""
+        tenant = self.get_object()
+        serializer = self.get_serializer(data=request.data, context={'tenant': tenant})
+        serializer.is_valid(raise_exception=True)
         
-        return JsonResponse({
-            'success': True,
-            'data': info
-        })
+        try:
+            confirm_name = serializer.validated_data['confirm_name']
+            updated_tenant = soft_delete_tenant(tenant.id, confirm_name)
+            
+            return Response({
+                'success': True,
+                'message': 'Tenant soft deleted successfully',
+                'data': {
+                    'utility_id': updated_tenant.id,
+                    'name': updated_tenant.name,
+                    'is_deleted': updated_tenant.is_deleted,
+                    'deleted_on': updated_tenant.deleted_on.isoformat() if updated_tenant.deleted_on else None
+                }
+            })
+        except ValidationError as e:
+            logger.error(f"Validation error in soft delete: {str(e)}")
+            return Response({
+                'success': False,
+                'error': str(e)
+            }, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            logger.error(f"Unexpected error in soft delete: {str(e)}")
+            return Response({
+                'success': False,
+                'error': 'Internal server error'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    @action(detail=True, methods=['post'])
+    def restore(self, request, pk=None):
+        """Restore a soft-deleted tenant"""
+        try:
+            tenant = restore_tenant(pk)
+            
+            return Response({
+                'success': True,
+                'message': 'Tenant restored successfully',
+                'data': {
+                    'utility_id': tenant.id,
+                    'name': tenant.name,
+                    'is_active': tenant.is_active,
+                    'is_deleted': tenant.is_deleted
+                }
+            })
+        except ValidationError as e:
+            logger.error(f"Validation error in restore: {str(e)}")
+            return Response({
+                'success': False,
+                'error': str(e)
+            }, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            logger.error(f"Unexpected error in restore: {str(e)}")
+            return Response({
+                'success': False,
+                'error': 'Internal server error'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    @action(detail=True, methods=['delete'], url_path='permanent-delete')
+    def permanent_delete(self, request, pk=None):
+        """Permanently delete a tenant (only works on soft-deleted tenants)"""
+        tenant = get_object_or_404(Utility, pk=pk)
+        serializer = self.get_serializer(data=request.data, context={'tenant': tenant})
+        serializer.is_valid(raise_exception=True)
         
-    except ValidationError as e:
-        return JsonResponse({
-            'success': False,
-            'error': str(e)
-        }, status=404)
-    except Exception as e:
-        logger.error(f"Unexpected error in get_tenant_info_api: {str(e)}")
-        return JsonResponse({
-            'success': False,
-            'error': 'Internal server error'
-        }, status=500)
+        try:
+            confirm_name = serializer.validated_data['confirm_name']
+            success = permanently_delete_tenant(pk, confirm_name)
+            
+            return Response({
+                'success': success,
+                'message': 'Tenant permanently deleted successfully'
+            })
+        except ValidationError as e:
+            logger.error(f"Validation error in permanent delete: {str(e)}")
+            return Response({
+                'success': False,
+                'error': str(e)
+            }, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            logger.error(f"Unexpected error in permanent delete: {str(e)}")
+            return Response({
+                'success': False,
+                'error': 'Internal server error'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    @action(detail=True, methods=['patch'])
+    def toggle_status(self, request, pk=None):
+        """Toggle tenant active status"""
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        try:
+            is_active = serializer.validated_data.get('is_active')
+            tenant = toggle_tenant_status(pk, is_active)
+            
+            return Response({
+                'success': True,
+                'data': {
+                    'utility_id': tenant.id,
+                    'name': tenant.name,
+                    'is_active': tenant.is_active
+                }
+            })
+        except ValidationError as e:
+            return Response({
+                'success': False,
+                'error': str(e)
+            }, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            logger.error(f"Unexpected error in toggle status: {str(e)}")
+            return Response({
+                'success': False,
+                'error': 'Internal server error'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    @action(detail=True, methods=['post'], url_path='domains')
+    def add_domain(self, request, pk=None):
+        """Add a domain to existing tenant"""
+        tenant = self.get_object()
+        serializer = DomainCreateSerializer(data=request.data, context={'tenant': tenant})
+        serializer.is_valid(raise_exception=True)
+        
+        try:
+            domain = serializer.save()
+            
+            return Response({
+                'success': True,
+                'data': {
+                    'domain': domain.domain,
+                    'is_primary': domain.is_primary,
+                    'is_active': domain.is_active
+                }
+            }, status=status.HTTP_201_CREATED)
+        except ValidationError as e:
+            return Response({
+                'success': False,
+                'error': str(e)
+            }, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            logger.error(f"Unexpected error in add domain: {str(e)}")
+            return Response({
+                'success': False,
+                'error': 'Internal server error'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
