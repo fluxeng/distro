@@ -132,7 +132,6 @@ class AssetMapSerializer(GeoFeatureModelSerializer):
             'type_color', 'status', 'location'
         ]
     
-        return f"{self.get_full_name()} ({self.role})"
     
     @property
     def is_admin(self):

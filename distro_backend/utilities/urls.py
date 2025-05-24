@@ -1,10 +1,8 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-# from .views import UtilityViewSet  # You'll create this later
-
-router = DefaultRouter()
-# router.register(r'profile', UtilityViewSet)
+from .views import UserLocationLoggerView, DashboardStatsView
 
 urlpatterns = [
-    path('', include(router.urls)),
+    path('gps/', UserLocationLoggerView.as_view(), name="gps-log"),
+    path('dashboard/', DashboardStatsView.as_view(), name="dashboard-stats"),
 ]

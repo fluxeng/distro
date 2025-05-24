@@ -83,12 +83,12 @@ class MaintenanceTask(models.Model):
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='scheduled')
     
     # Related entities
-    asset = models.ForeignKey(Asset, on_delete=models.CASCADE, related_name='maintenance_tasks', null=True, blank=True)
-    issue = models.ForeignKey(Issue, on_delete=models.SET_NULL, null=True, blank=True, related_name='maintenance_tasks')
+    asset = models.ForeignKey('infrastructure.Asset', on_delete=models.CASCADE, related_name='maintenance_tasks', null=True, blank=True)
+    issue = models.ForeignKey('infrastructure.Issue', on_delete=models.SET_NULL, null=True, blank=True, related_name='maintenance_tasks')
     
     # Assignment
     assigned_to = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='maintenance_tasks')
-    assigned_team = models.ForeignKey(Team, on_delete=models.SET_NULL, null=True, blank=True, related_name='maintenance_tasks')
+    assigned_team = models.ForeignKey('infrastructure.Team', on_delete=models.SET_NULL, null=True, blank=True, related_name='maintenance_tasks')
     
     # Scheduling
     scheduled_date = models.DateTimeField()
@@ -141,15 +141,23 @@ class WorkOrder(models.Model):
     
     # Related entities
     maintenance_task = models.ForeignKey(MaintenanceTask, on_delete=models.CASCADE, related_name='work_orders', null=True, blank=True)
-    issues = models.ManyToManyField(Issue, related_name='work_orders', blank=True)
+    issues = models.ManyToManyField('maintenance.Issue', related_name='work_orders', blank=True)
     
     # Status
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='draft')
-    priority = models.CharField(max_length=20, choices=Issue.PRIORITY_CHOICES, default='medium')
+
+    PRIORITY_CHOICES = [
+    ('critical', 'Critical'),
+    ('high', 'High'),
+    ('medium', 'Medium'),
+    ('low', 'Low'),
+    ]
+
+    priority = models.CharField(max_length=20, choices=PRIORITY_CHOICES, default='medium')
     
     # Assignment
     supervisor = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='supervised_work_orders')
-    assigned_team = models.ForeignKey(Team, on_delete=models.SET_NULL, null=True, related_name='work_orders')
+    assigned_team = models.ForeignKey('utilities.Team', on_delete=models.SET_NULL, null=True, related_name='work_orders')
     
     # Instructions
     instructions = models.TextField()
@@ -184,7 +192,7 @@ class WorkOrder(models.Model):
 
 class IssuePhoto(models.Model):
     """Photos attached to issues"""
-    issue = models.ForeignKey(Issue, on_delete=models.CASCADE, related_name='photos')
+    issue = models.ForeignKey('maintenance.Issue', on_delete=models.CASCADE, related_name='photos')
     image = models.ImageField(upload_to='issue_photos/')
     caption = models.CharField(max_length=200, blank=True)
     
@@ -214,7 +222,7 @@ class MaintenanceLog(models.Model):
     ]
     
     # Related entities
-    issue = models.ForeignKey(Issue, on_delete=models.CASCADE, related_name='logs', null=True, blank=True)
+    issue = models.ForeignKey('maintenance.Issue', on_delete=models.CASCADE, related_name='logs', null=True, blank=True)
     maintenance_task = models.ForeignKey(MaintenanceTask, on_delete=models.CASCADE, related_name='logs', null=True, blank=True)
     work_order = models.ForeignKey(WorkOrder, on_delete=models.CASCADE, related_name='logs', null=True, blank=True)
     
@@ -235,3 +243,17 @@ class MaintenanceLog(models.Model):
     
     def __str__(self):
         return f"{self.log_type} - {self.created_at}"
+    
+
+class Team(models.Model):
+    name = models.CharField(max_length=100)
+    description = models.TextField(blank=True)
+    members = models.ManyToManyField('utilities.User', related_name='teams')
+
+
+class Department(models.Model):
+    name = models.CharField(max_length=100)
+    description = models.TextField(blank=True)
+    manager = models.ForeignKey('utilities.User', on_delete=models.SET_NULL, null=True, related_name='managed_departments')
+    teams = models.ManyToManyField('utilities.Team', related_name='departments')
+
