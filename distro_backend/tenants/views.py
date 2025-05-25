@@ -24,7 +24,7 @@ class TenantViewSet(viewsets.ModelViewSet):
     ViewSet for managing tenants with full CRUD operations
     """
     queryset = Utility.objects.all()
-    # permission_classes = [IsAuthenticated]  # Uncomment when you add auth
+    permission_classes = [IsAuthenticated]  # Uncomment when you add auth
     
     def get_serializer_class(self):
         """Return different serializers for different actions"""
