@@ -21,9 +21,9 @@ class AssetTypeAdmin(admin.ModelAdmin):
         )
     color_preview.short_description = 'Color'
 
-
+from django.contrib.gis.admin import GISModelAdmin
 @admin.register(Zone)
-class ZoneAdmin(gis_admin.OSMGeoAdmin):
+class ZoneAdmin(GISModelAdmin):
     list_display = ['name', 'code', 'population', 'households', 'is_active']
     list_filter = ['is_active']
     search_fields = ['name', 'code']
@@ -47,8 +47,10 @@ class AssetInspectionInline(admin.TabularInline):
     fields = ['inspection_date', 'inspector', 'condition_rating', 'requires_maintenance']
 
 
+from django.contrib.gis.admin import GISModelAdmin
+
 @admin.register(Asset)
-class AssetAdmin(gis_admin.OSMGeoAdmin):
+class AssetAdmin(GISModelAdmin):
     list_display = [
         'asset_id', 'name', 'asset_type', 'zone', 'status',
         'condition_badge', 'last_inspection'

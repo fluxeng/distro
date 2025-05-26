@@ -8,4 +8,5 @@ urlpatterns = [
     path('api/tenants/', include('tenants.urls')),
     path('api/users/', include('users.urls')),  # Add this line
     path('api-auth/', include('rest_framework.urls')),
+    path('api/infrastructure/', include('infrastructure.urls')),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
