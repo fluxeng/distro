@@ -1,0 +1,63 @@
+import { NextResponse } from 'next/server'
+import type { NextRequest } from 'next/server'
+
+export function middleware(request: NextRequest) {
+  const { pathname } = request.nextUrl
+  const hostname = request.headers.get('host') || ''
+  
+  // Get the subdomain
+  const subdomain = hostname.split('.')[0]
+  
+  console.log(`🌐 Middleware: ${hostname}${pathname}`)
+  
+  // Handle localhost (public admin)
+  if (hostname === 'localhost:3000' || hostname === '127.0.0.1:3000') {
+    // Redirect root to admin dashboard
+    if (pathname === '/') {
+      return NextResponse.redirect(new URL('/admin/dashboard', request.url))
+    }
+    
+    // Allow admin routes
+    if (pathname.startsWith('/admin')) {
+      const response = NextResponse.next()
+      response.headers.set('x-tenant-type', 'public')
+      response.headers.set('x-tenant-id', 'public')
+      return response
+    }
+    
+    // Redirect non-admin routes to admin dashboard
+    return NextResponse.redirect(new URL('/admin/dashboard', request.url))
+  }
+  
+  // Handle tenant subdomains (demo.localhost:3000)
+  if (hostname.includes('localhost:3000') && subdomain !== 'localhost') {
+    // Set tenant headers
+    const response = NextResponse.next()
+    response.headers.set('x-tenant-type', 'tenant')
+    response.headers.set('x-tenant-id', subdomain)
+    response.headers.set('x-tenant-domain', hostname)
+    
+    // Redirect root to login if not authenticated (we'll improve this later)
+    if (pathname === '/') {
+      return NextResponse.redirect(new URL('/login', request.url))
+    }
+    
+    return response
+  }
+  
+  // Default response for other cases
+  return NextResponse.next()
+}
+
+export const config = {
+  matcher: [
+    /*
+     * Match all request paths except for the ones starting with:
+     * - api (API routes)
+     * - _next/static (static files)
+     * - _next/image (image optimization files)
+     * - favicon.ico (favicon file)
+     */
+    '/((?!api|_next/static|_next/image|favicon.ico).*)',
+  ],
+}
