@@ -10,7 +10,7 @@ from .views import (
 app_name = 'users'
 
 router = DefaultRouter()
-router.register(r'users', UserViewSet, basename='user')
+router.register(r'', UserViewSet, basename='user')
 router.register(r'invitations', UserInvitationViewSet, basename='invitation')
 
 urlpatterns = [
