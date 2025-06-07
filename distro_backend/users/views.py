@@ -3,18 +3,20 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
-from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+from rest_framework_simplejwt.views import TokenObtainPairView
 from django.shortcuts import get_object_or_404
 from django.db.models import Q
 from django.utils import timezone
 from django.contrib.auth import logout
+from datetime import timedelta
 import logging
 
 from .models import User, UserInvitation
 from .serializers import (
     UserSerializer, UserDetailSerializer, UserCreateSerializer,
     UserUpdateSerializer, UserProfileSerializer, ChangePasswordSerializer,
-    LoginSerializer, UserInvitationSerializer, AcceptInvitationSerializer
+    LoginSerializer, UserInvitationSerializer, AcceptInvitationSerializer,
+    ForgotPasswordSerializer, ResetPasswordSerializer, LogoutSerializer
 )
 from .permissions import IsOwnerOrAdmin, IsSupervisorOrAdmin
 
@@ -49,11 +51,48 @@ class CustomTokenObtainPairView(TokenObtainPairView):
         }, status=status.HTTP_200_OK)
 
 
+class ForgotPasswordView(APIView):
+    """Request password reset"""
+    permission_classes = []
+    
+    def post(self, request):
+        serializer = ForgotPasswordSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        # Always return success for security (don't reveal if email exists)
+        serializer.save()
+        
+        return Response({
+            'success': True,
+            'message': 'If an account with this email exists, a password reset link has been sent.'
+        })
+
+
+class ResetPasswordView(APIView):
+    """Reset password with token"""
+    permission_classes = []
+    
+    def post(self, request):
+        serializer = ResetPasswordSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        user = serializer.save()
+        
+        return Response({
+            'success': True,
+            'message': 'Password has been reset successfully.'
+        })
+
+
 class LogoutView(APIView):
     """Custom logout view"""
     permission_classes = [permissions.IsAuthenticated]
+    serializer_class = LogoutSerializer
     
     def post(self, request):
+        """
+        Logout user and blacklist refresh token
+        """
         try:
             # Blacklist the refresh token if provided
             refresh_token = request.data.get('refresh_token')
@@ -139,7 +178,14 @@ class UserViewSet(viewsets.ModelViewSet):
                 'error': 'You do not have permission to create users'
             }, status=status.HTTP_403_FORBIDDEN)
         
-        return super().create(request, *args, **kwargs)
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.save()
+        
+        return Response({
+            'success': True,
+            'data': UserSerializer(user).data
+        }, status=status.HTTP_201_CREATED)
     
     def update(self, request, *args, **kwargs):
         """Update a user"""
@@ -152,7 +198,14 @@ class UserViewSet(viewsets.ModelViewSet):
                 'error': 'You do not have permission to edit this user'
             }, status=status.HTTP_403_FORBIDDEN)
         
-        return super().update(request, *args, **kwargs)
+        serializer = self.get_serializer(instance, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.save()
+        
+        return Response({
+            'success': True,
+            'data': UserSerializer(user).data
+        })
     
     def destroy(self, request, *args, **kwargs):
         """Soft delete a user"""

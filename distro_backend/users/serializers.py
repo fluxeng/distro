@@ -1,6 +1,9 @@
 from rest_framework import serializers
 from django.contrib.auth import authenticate
 from django.contrib.auth.password_validation import validate_password
+from django.contrib.auth.tokens import default_token_generator
+from django.utils.encoding import force_bytes
+from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from django.utils import timezone
 from datetime import timedelta
 import uuid
@@ -155,6 +158,61 @@ class ChangePasswordSerializer(serializers.Serializer):
         return user
 
 
+class ForgotPasswordSerializer(serializers.Serializer):
+    """Serializer for password reset request"""
+    email = serializers.EmailField()
+    
+    def validate_email(self, value):
+        try:
+            user = User.objects.get(email=value.lower(), is_active=True, is_deleted=False)
+            self.user = user
+        except User.DoesNotExist:
+            # Don't reveal if email exists for security
+            pass
+        return value.lower()
+    
+    def save(self):
+        if hasattr(self, 'user'):
+            # Generate reset token
+            token = default_token_generator.make_token(self.user)
+            uid = urlsafe_base64_encode(force_bytes(self.user.pk))
+            
+            # TODO: Send password reset email with token and uid
+            # send_password_reset_email(self.user, token, uid)
+            
+            return {'uid': uid, 'token': token}
+        return None
+
+
+class ResetPasswordSerializer(serializers.Serializer):
+    """Serializer for password reset confirmation"""
+    uid = serializers.CharField()
+    token = serializers.CharField()
+    new_password = serializers.CharField(
+        write_only=True,
+        validators=[validate_password]
+    )
+    
+    def validate(self, data):
+        try:
+            uid = urlsafe_base64_decode(data['uid']).decode()
+            user = User.objects.get(pk=uid, is_active=True, is_deleted=False)
+            
+            if not default_token_generator.check_token(user, data['token']):
+                raise serializers.ValidationError("Invalid or expired reset token")
+            
+            self.user = user
+        except (TypeError, ValueError, OverflowError, User.DoesNotExist):
+            raise serializers.ValidationError("Invalid reset link")
+        
+        return data
+    
+    def save(self):
+        self.user.set_password(self.validated_data['new_password'])
+        self.user.save()
+        return self.user
+
+
 class LoginSerializer(serializers.Serializer):
     """Serializer for user login"""
     email = serializers.EmailField()
@@ -225,3 +283,11 @@ class AcceptInvitationSerializer(serializers.Serializer):
     first_name = serializers.CharField(max_length=150)
     last_name = serializers.CharField(max_length=150)
     phone_number = serializers.CharField(max_length=17, required=False)
+
+
+class LogoutSerializer(serializers.Serializer):
+    """Serializer for logout request"""
+    refresh_token = serializers.CharField(
+        required=False, 
+        help_text="Refresh token to blacklist (optional)"
+    )
