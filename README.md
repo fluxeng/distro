@@ -28,7 +28,4 @@ Distro V1 is a comprehensive digital twin platform designed for water utilities 
 - Africa's Talking account (for SMS, optional)
 
 ### Installation
-1. Clone the repository:
-   ```bash
-   git clone <repository-url>
-   cd distro-backend
+To be Updated
